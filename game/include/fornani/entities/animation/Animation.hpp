@@ -40,6 +40,7 @@ struct Animation {
 	void set_params(Parameters const new_params, bool hard = true);
 	void switch_params();
 	void end() { frame.cancel(); }
+	void set_frame(int to_frame);
 	int get_frame() const;
 
 	[[nodiscard]] auto active() const -> bool { return frame_timer.running(); }

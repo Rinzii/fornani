@@ -1,4 +1,3 @@
-
 #include "fornani/entities/animation/Animation.hpp"
 #include <iostream>
 
@@ -80,6 +79,8 @@ void Animation::switch_params() {
 	frame_timer.start(params.framerate);
 	refresh();
 }
+
+void Animation::set_frame(int to_frame) { frame.set(to_frame); }
 
 int Animation::get_frame() const { return frame.canceled() ? params.lookup : params.lookup + frame.get_count(); }
 

@@ -478,6 +478,7 @@ fsm::StateFunction PlayerAnimation::update_die() {
 		m_player->m_services->state_controller.actions.set(automa::Actions::death_mode); //set here, reset on map load
 		//std::cout << "Death animation started.\n";
 	}
+	if (animation.get_frame() == 79 && !m_player->grounded()) { animation.set_frame(2); }
 	m_player->controller.restrict_movement();
 	m_player->controller.prevent_movement();
 	m_player->collider.collision_depths = {};
