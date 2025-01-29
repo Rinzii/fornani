@@ -5,48 +5,144 @@
 
 namespace fornani {
 
-void WindowManager::set() {
-	game_view = sf::View(sf::FloatRect({}, {static_cast<float>(screen_dimensions.x), static_cast<float>(screen_dimensions.y)}));
-	// set view and viewport for fullscreen mode
-	const auto aspect_ratio = static_cast<float>(aspects.x) / static_cast<float>(aspects.y);
-	const auto display_ratio = static_cast<float>(display_dimensions.x) / static_cast<float>(display_dimensions.y);
-	const auto letterbox = std::min(display_ratio, aspect_ratio) / std::max(display_ratio, aspect_ratio);
-	const auto vertical = display_ratio < aspect_ratio;
-	auto resize_ratio = vertical ? sf::Vector2<float>(1.f, letterbox) : sf::Vector2<float>(letterbox, 1.f);
-	auto offset = vertical ? sf::Vector2<float>(0.f, (1.f - letterbox) * 0.5f) : sf::Vector2<float>((1.f - letterbox) * 0.5f, 0.f);
-	game_port = is_fullscreen ? sf::FloatRect{{offset.x, offset.y}, {resize_ratio.x, resize_ratio.y}} : sf::FloatRect({}, {1.f, 1.f});
-	game_view.setViewport(game_port);
-	window.setView(game_view);
-	if (is_fullscreen) { window.setMouseCursorVisible(false); }
+void WindowManager::create(sf::Vector2u requestedWindowSize, std::string_view title, bool fullscreen) {
+	m_current_window_size = requestedWindowSize;
+	m_title = title;
+	m_is_fullscreen = fullscreen;
+	std::uint32_t style = (m_is_fullscreen ? sf::State::Fullscreen : sf::Style::Default);
+	auto mode = m_is_fullscreen ? sf::VideoMode(m_max_display_dimensions) : sf::VideoMode(requestedWindowSize);
 
-	if (!screencap.resize(window.getSize())) { NANI_LOG_WARN(m_logger, "Failed to resize window."); }
-	window.setVerticalSyncEnabled(true);
-	window.setFramerateLimit(60);
-	window.setKeyRepeatEnabled(false);
-}
-
-void WindowManager::create(const std::string& title, bool const fullscreen) {
-	is_fullscreen = fullscreen;
-	// set window constants
-	screen_dimensions = {aspects.x / 4, aspects.y / 4};
-	u_screen_dimensions = {static_cast<uint16_t>(screen_dimensions.x), static_cast<uint16_t>(screen_dimensions.y)};
-	display_dimensions = {static_cast<unsigned>(sf::VideoMode::getDesktopMode().size.x), static_cast<unsigned>(sf::VideoMode::getDesktopMode().size.y)};
-	mode = fullscreen ? sf::VideoMode(display_dimensions) : sf::VideoMode(u_screen_dimensions);
-	if (!mode.isValid() && fullscreen) {
-		NANI_LOG_WARN(
-			m_logger,
+	if (!mode.isValid() && m_is_fullscreen) {
+		NANI_LOG_WARN(m_logger,
 			"Number of valid fullscreen modes: {}\n"
-			"Failed to extract a valid fullscreen mode.",
-			sf::VideoMode::getFullscreenModes().size());
-		mode = sf::VideoMode(u_screen_dimensions);
-		is_fullscreen = false;
+			"Failed to extract a valid screen mode.\n",
+			mode.getFullscreenModes().size());
+		// TODO: This might need to be adjusted as 8k screens technically exist.
+		//		 Also it might instead be better to get the resolution of there screen and adjust based on that.
+		constexpr sf::Vector2u new_display_size = {m_maintained_aspect_ration.x / 4, m_maintained_aspect_ration.y / 4};
+		mode = sf::VideoMode(new_display_size);
+		m_is_fullscreen = false;
 	}
-	is_fullscreen ? window.create(mode, title, sf::State::Fullscreen) : window.create(mode, title, sf::Style::Default & ~sf::Style::Resize);
+
+	m_window = std::make_unique<sf::RenderWindow>(mode, m_title);
+	m_window->setFramerateLimit(60);
+	if (is_fullscreen) { m_window->setMouseCursorVisible(false); }
+
+	Resized += std::bind(&WindowManager::OnResize, this, std::placeholders::_1);
+
 }
 
 
-void WindowManager::restore_view() { window.setView(game_view); }
+void WindowManager::take_screenshot() {
+	m_screencap.update(*m_window);
+	std::time_t const now = std::time(nullptr);
 
-void WindowManager::set_screencap() { if (!screencap.resize(window.getSize())) { NANI_LOG_WARN(m_logger, "Window resize failed!"); } }
+	const std::time_t time = std::time({});
+	char time_string[std::size("yyyy-mm-ddThh:mm:ssZ")];
+	std::strftime(std::data(time_string), std::size(time_string), "%FT%TZ", std::gmtime(&time));
+	std::string time_str = time_string;
 
+	std::erase_if(time_str, [](auto const& c) { return c == ':' || isspace(c); });
+	if (const std::string filename = "screenshot_" + time_str + ".png"; m_screencap.copyToImage().saveToFile(filename))
+	{
+		NANI_LOG_INFO(m_logger, "screenshot saved to: {}", filename);
+	}
+}
+
+auto WindowManager::process_events() const -> void { // NOLINT
+	// Poll for every possible event then invoke all subscribed functions. Not thread safe.
+	while (const auto event = m_window->pollEvent())
+	{
+		if (event->is<sf::Event::Closed>()) {
+			Closed();
+		}
+		ProcessEventsLoopTop(); // Handled second technically but might as well be considered first.
+		if (const auto* ev = event->getIf<sf::Event::Resized>()) {
+			Resized(ev->size);
+		}
+		if (event->is<sf::Event::FocusLost>()) {
+			FocusLost();
+		}
+		if (event->is<sf::Event::FocusGained>()) {
+			FocusGained();
+		}
+		if (const auto* ev = event->getIf<sf::Event::KeyPressed>()) {
+			KeyPressed(ev->code, ev->scancode, ev->alt, ev->control, ev->shift, ev->system);
+		}
+		if (const auto* ev = event->getIf<sf::Event::KeyReleased>()) {
+			KeyReleased(ev->code, ev->scancode, ev->alt, ev->control, ev->shift, ev->system);
+		}
+		if (const auto* ev = event->getIf<sf::Event::MouseWheelScrolled>()) {
+			MouseWheelScrolled(ev->wheel, ev->delta, ev->position);
+		}
+		if (const auto* ev = event->getIf<sf::Event::MouseButtonPressed>()) {
+			MouseButtonPressed(ev->button, ev->position);
+		}
+		if (const auto* ev = event->getIf<sf::Event::MouseButtonReleased>()) {
+			MouseButtonReleased(ev->button, ev->position);
+		}
+		if (const auto* ev = event->getIf<sf::Event::MouseMoved>()) {
+			MouseMoved(ev->position);
+		}
+		if (const auto* ev = event->getIf<sf::Event::MouseMovedRaw>()) {
+			MouseMovedRaw(ev->delta);
+		}
+		if (event->is<sf::Event::MouseEntered>()) {
+			MouseEntered();
+		}
+		if (event->is<sf::Event::MouseLeft>()) {
+			MouseExited();
+		}
+		if (const auto* ev = event->getIf<sf::Event::JoystickButtonPressed>()) {
+			JoystickButtonPressed(ev->joystickId, ev->button);
+		}
+		if (const auto* ev = event->getIf<sf::Event::JoystickButtonReleased>()) {
+			JoystickButtonReleased(ev->joystickId, ev->button);
+		}
+		if (const auto* ev = event->getIf<sf::Event::JoystickMoved>()) {
+			JoystickMoved(ev->joystickId, ev->axis, ev->position);
+		}
+		if (const auto* ev = event->getIf<sf::Event::JoystickConnected>()) {
+			JoystickConnected(ev->joystickId);
+		}
+		if (const auto* ev = event->getIf<sf::Event::JoystickDisconnected>()) {
+			JoystickDisconnected(ev->joystickId);
+		}
+	}
+	PolledEvents();
+}
+
+void WindowManager::OnResize(const sf::Vector2u& newSize) {
+	m_current_window_size = newSize;
+	apply_letterbox(newSize);
+	m_window->setView(*m_view);
+}
+
+// TODO: Clean this up
+auto WindowManager::apply_letterbox(const sf::Vector2u& windowSize) -> void {
+	// Current aspect ratio of the window
+	float const currentRatio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
+
+	// Calculate new viewport (in normalized coords [0..1]) that letterboxes the view
+	float sizeX = 1.0f;
+	float sizeY = 1.0f;
+	float posX  = 0.0f;
+	float posY  = 0.0f;
+
+	if (currentRatio > m_aspect_ratio)
+	{
+		// Too wide, add horizontal bars
+		sizeX = m_aspect_ratio / currentRatio;
+		posX  = (1.f - sizeX) / 2.f;
+	}
+	else if (currentRatio < m_aspect_ratio)
+	{
+		// Too tall, add vertical bars
+		sizeY = currentRatio / m_aspect_ratio;
+		posY  = (1.f - sizeY) / 2.f;
+	}
+
+	m_game_port = sf::FloatRect({posX, posY}, {sizeX, sizeY});
+	m_view->setViewport(m_game_port);
+}
 } // namespace fornani

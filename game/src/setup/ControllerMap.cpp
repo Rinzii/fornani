@@ -67,18 +67,22 @@ bool parent_action_set(ActionSet set, ActionSet* parent) {
 }
 
 ControllerMap::ControllerMap(automa::ServiceProvider& svc) {
-	std::cout << "Initializing Steam Input" << std::endl;
+	NANI_LOG_INFO(m_logger, "Initializing Steam Input");
 	if (!SteamInput()->Init(true)) {
-		std::cout << "Could not initialize Steam Input!" << std::endl;
+		NANI_LOG_WARN(m_logger, "Could not initialize Steam Input!");
 	} else {
-		std::cout << "Steam Input initialized" << std::endl;
+		NANI_LOG_INFO(m_logger, "Steam Input initialized");
 	}
 	// TODO When we have a proper Steam App ID assigned, upload the steam input manifest into the game's depot.
 	std::string input_action_manifest_path = svc.finder.resource_path() + "\\text\\input\\steam_input_manifest.vdf";
 	if (!SteamInput()->SetInputActionManifestFilePath(input_action_manifest_path.c_str())) {
 		// uh oh
-		std::cout << "Could not set Action Manifest file path!" << std::endl;
-		std::cout << "Path: " << input_action_manifest_path << std::endl;
+		// TODO: IanP: If we fail to load steam input should we consider this a fatal state and abort?
+		NANI_LOG_ERROR(m_logger,
+			"Could not set Action Manifest file path!\n"
+			"Path: {}\n",
+			input_action_manifest_path
+			);
 	}
 	SteamInput()->EnableDeviceCallbacks();
 
@@ -93,6 +97,24 @@ ControllerMap::ControllerMap(automa::ServiceProvider& svc) {
 	menu_action_set = SteamInput()->GetActionSetHandle("Menu");
 	inventory_action_layer = SteamInput()->GetActionSetHandle("Menu_Inventory");
 	map_action_layer = SteamInput()->GetActionSetHandle("Menu_Map");
+
+	// Subscribe to key events
+	svc.window->KeyPressed += std::bind(&ControllerMap::OnKeyPress, this,
+										 std::placeholders::_1, // sf::Keyboard::Key
+										 std::placeholders::_2, // sf::Keyboard::Scancode
+										 std::placeholders::_3, // bool alt
+										 std::placeholders::_4, // bool control
+										 std::placeholders::_5, // bool shift
+										 std::placeholders::_6 // bool system
+	);
+	svc.window->KeyReleased += std::bind(&ControllerMap::OnKeyPress, this,
+										 std::placeholders::_1, // sf::Keyboard::Key
+										 std::placeholders::_2, // sf::Keyboard::Scancode
+										 std::placeholders::_3, // bool alt
+										 std::placeholders::_4, // bool control
+										 std::placeholders::_5, // bool shift
+										 std::placeholders::_6 // bool system
+		);
 }
 
 void ControllerMap::setup_action_handles() {
@@ -145,11 +167,9 @@ void ControllerMap::setup_action_handles() {
 
 void ControllerMap::handle_event(std::optional<sf::Event> const event) {
 	if (auto const* key_pressed = event->getIf<sf::Event::KeyPressed>()) {
-		if (last_controller_ty_used != ControllerType::keyboard) { reset_digital_action_states(); }
-		last_controller_ty_used = ControllerType::keyboard;
-		if (key_pressed->scancode != sf::Keyboard::Scancode::Unknown) { keys_pressed.insert(key_pressed->scancode); }
+
 	} else if (auto const* key_released = event->getIf<sf::Event::KeyReleased>()) {
-		keys_pressed.erase(key_released->scancode);
+
 	}
 }
 
@@ -429,6 +449,16 @@ auto ControllerMap::get_action_by_identifier(std::string_view id) -> config::Dig
 	};
 
 	return map.at(id);
+}
+
+void ControllerMap::OnKeyPress(sf::Keyboard::Key, sf::Keyboard::Scancode scancode, bool, bool, bool, bool) {
+	if (last_controller_ty_used != ControllerType::keyboard) { reset_digital_action_states(); }
+	last_controller_ty_used = ControllerType::keyboard;
+	if (scancode != sf::Keyboard::Scancode::Unknown) { keys_pressed.insert(scancode); }
+}
+
+void ControllerMap::OnKeyReleased(sf::Keyboard::Key, sf::Keyboard::Scancode scancode, bool, bool, bool, bool) {
+	keys_pressed.erase(scancode);
 }
 
 } // namespace config

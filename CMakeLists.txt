@@ -34,7 +34,9 @@ option(
 include(cmake/func/AddTargetSource.cmake)
 include(cmake/GenerateDataTemplates.cmake)
 
-add_subdirectory(dependencies)
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.25.0")
+  add_subdirectory(dependencies SYSTEM)
+endif ()
 add_subdirectory(game)
 if (FORNANI_BUILD_EDITOR)
   message(STATUS "FORNANI: Building editor!")

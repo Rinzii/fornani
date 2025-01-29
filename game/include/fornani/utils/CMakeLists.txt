@@ -1,4 +1,6 @@
 nani_add_headers(
+        MonoInstance.hpp
+        Event.hpp
         AdjacencyList.hpp
         BitFlags.hpp
         CircleCollider.hpp

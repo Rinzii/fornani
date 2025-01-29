@@ -40,8 +40,8 @@ void MiniMap::bake(automa::ServiceProvider& svc, world::Map& map, int room, bool
 }
 
 void MiniMap::update(automa::ServiceProvider& svc, world::Map& map, player::Player& player) {
-	view = svc.window->get_view();
-	auto port = svc.window->get_viewport();
+	view = svc.window->get().getView();
+	auto port = svc.window->get().getView().getViewport();
 	port.size.x *= window_scale;
 	port.size.y *= window_scale;
 	port.position.x = (1.f - port.size.x) * 0.5f;

@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "fornani/utils/BitFlags.hpp"
+#include "fornani/utils/Logger.hpp"
 
 namespace automa {
 struct ServiceProvider;
@@ -151,6 +152,20 @@ class ControllerMap {
 	auto get_action_by_identifier(std::string_view id) -> config::DigitalAction;
 
   private:
+
+	void OnKeyPress(sf::Keyboard::Key key,
+			  sf::Keyboard::Scancode scancode,
+			  bool alt,
+			  bool control,
+			  bool shift,
+			  bool system);
+	void OnKeyReleased(sf::Keyboard::Key key,
+				   sf::Keyboard::Scancode scancode,
+				   bool alt,
+				   bool control,
+				   bool shift,
+				   bool system);
+
 	struct DigitalActionData {
 		InputDigitalActionHandle_t steam_handle;
 		DigitalActionStatus status;
@@ -191,6 +206,8 @@ class ControllerMap {
 	STEAM_CALLBACK(ControllerMap, handle_gamepad_connection, SteamInputDeviceConnected_t);
 
 	STEAM_CALLBACK(ControllerMap, handle_gamepad_disconnection, SteamInputDeviceDisconnected_t);
+
+	fornani::Logger m_logger {"config"};
 };
 
 } // namespace config
